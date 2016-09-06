@@ -2,12 +2,14 @@ from sqlite3 import Time, time
 from sys import byteorder
 from array import array
 from struct import pack
+
+import numpy
 from audiolazy.lazy_lpc import lpc as novi_lpc
 
 import pyaudio
 import wave
 
-THRESHOLD = 0
+THRESHOLD = 150
 CHUNK_SIZE = 1024
 FORMAT = pyaudio.paInt16
 RATE = 44100
@@ -86,18 +88,9 @@ def auto_treshold():
             THRESHOLD = maximum
         if time.time() - start >= 5:
             break;
-    THRESHOLD *= 3.5
+    THRESHOLD *= 2
 
     print("Auto threshold finished: " + str(THRESHOLD))
-    sample_width = p.get_sample_size(FORMAT)
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
-
-    r = normalize(r)
-    r = trim(r)
-    r = add_silence(r, 0.5)
-    return sample_width, r
 
 def record():
     """
@@ -149,7 +142,7 @@ def record():
 
     r = normalize(r)
     r = trim(r)
-    r = add_silence(r, 0.5)
+    # r = add_silence(r, 0.5)
     return sample_width, r
 
 def record_to_file():
@@ -157,6 +150,8 @@ def record_to_file():
 
     name = input("Enter the word u'll say: ")
     path = name.lower() + ".wav"
+
+    user = input("Enter the speaker name: ")
 
     sample_width, data = record()
     data = pack('<' + ('h'*len(data)), *data)
@@ -167,3 +162,40 @@ def record_to_file():
     wf.setframerate(RATE)
     wf.writeframes(data)
     wf.close()
+    return path, user
+
+def split(file):
+    global num_silent1
+    afile = wave.open(file, "rb")
+    n = afile.getnframes() // CHUNK_SIZE
+    num_silent1 = 0
+    counter = 0
+    p = pyaudio.PyAudio()
+    sample_width = p.get_sample_size(FORMAT)
+    ez_file = wave.open("search" + str(counter) + ".wav", "w")
+    opened = 1
+    ez_file.setnchannels(1)
+    ez_file.setframerate(RATE)
+    ez_file.setsampwidth(sample_width)
+    for i in range(0, n):
+        sound_data = afile.readframes(CHUNK_SIZE)
+        sound_data = numpy.fromstring(sound_data, "Int16")
+        if is_silent(sound_data):
+            num_silent1 += 1
+        else:
+            if opened == 0:
+                counter += 1
+                print("Otvara se trovacki fajl")
+                ez_file = wave.open("Search" + str(counter) + ".wav", "w")
+                opened = 1
+                ez_file.setnchannels(1)
+                ez_file.setframerate(RATE)
+                ez_file.setsampwidth(sample_width)
+            num_silent1 = 0
+            ez_file.writeframes(sound_data)
+        if num_silent1 > 4:
+            opened = 0
+            ez_file.close()
+
+    ez_file.close()
+    return counter
